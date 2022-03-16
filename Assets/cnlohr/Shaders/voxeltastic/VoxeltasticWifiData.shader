@@ -3,6 +3,7 @@
 	Properties
 	{
 		_Tex ("Texture", 3D) = "white" {}
+		_ColorRamp( "Color Ramp", 2D ) = "white" { }
 		_MinVal ("Min Val", float ) = 0.6
 		_MaxVal ("Min Val", float ) = 1.0
 		_GenAlpha ("Gen Alpha", float ) = 1.0
@@ -42,11 +43,13 @@
 			};
 
 			Texture3D<float4> _Tex;
+			sampler2D _ColorRamp;
 			float _MinVal;
 			float _MaxVal;
 			float _GenAlpha;
 
 			float AudioLinkRemap(float t, float a, float b, float u, float v) { return ((t-a) / (b-a)) * (v-u) + u; }
+
 
 			float3 AudioLinkHSVtoRGB(float3 HSV)
 			{
@@ -64,6 +67,7 @@
 					else if (I == 4) { RGB = float3(X, 0, C); }
 					else { RGB = float3(C, 0, X); }
 				}
+				return RGB;
 				float M = HSV.z - C;
 				return RGB + M;
 			}
@@ -78,7 +82,7 @@
 				a = saturate( a );
 				float initiala = accum.a;
 				float this_alpha = a*distance*accum.a*_GenAlpha;
-				float3 color = AudioLinkHSVtoRGB(float3( a,1, .8 ));
+				float3 color = tex2Dlod( _ColorRamp, float4( a, 0, 0, 0 ) );
 				accum.rgb += this_alpha * color;//lerp( accum.rgba, float4( normalize(AudioLinkHSVtoRGB(float3( a,1,1 ))), 0.0 ), this_alpha );
 				accum.a = initiala - this_alpha;
 			}			

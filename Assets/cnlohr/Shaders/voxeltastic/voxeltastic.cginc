@@ -95,6 +95,7 @@ float4 VT_TRACE( float3 ARRAYSIZE, float3 RayPos, float3 RayDir, float4 Accumula
 		half3 DirAbs = abs( RayDir );
 
 		UNITY_LOOP
+		int3 AO2 = ARRAYSIZE/2;
 		do
 		{
 			iteration++;
@@ -106,7 +107,8 @@ float4 VT_TRACE( float3 ARRAYSIZE, float3 RayPos, float3 RayDir, float4 Accumula
 				CellP.x >= ARRAYSIZE.x || 
 				CellP.z >= ARRAYSIZE.z )
 				break;
-
+			
+			//if( any( abs( CellP - AO2 - 0.5 ) > AO2 ) ) break;
 
 			//We are tracing into a cell.  Need to figure out how far we move
 			//to get into the next cell.
