@@ -12,65 +12,35 @@
 #define VT_MAXITER 511
 #endif
 
-float4 VT_TRACE( float3 ARRAYSIZE, float3 RayPos, float3 RayDir, float4 Accumulator )
+float4 VT_TRACE( float3 ARRAYSIZE, float3 RayPos, float3 RayDir, float4 Accumulator  )
 {
-	
-	float adv = 0;
-/*
-	{
-		float lin = max( 0, (length( surfacedistance )-1.) );
-		adv = max( adv, lin );
-	}
-*/
-
-	//Trace to Y.
-	{
-/*
-		float yadv = 0;
-		if( RayPos.y >= ARRAYSIZE.y )
-		{
-			float distY = RayPos.y-(ARRAYSIZE.y-1);
-			yadv = -distY / RayDir.y;
-		}
-		else if( RayPos.y <= 0 )
-		{
-			float distY = -RayPos.y;
-			yadv = distY / RayDir.y;
-		}
-		adv = max( adv, yadv );
-
-		float xadv = 0, zadv = 0;
-		if( RayPos.x >= (ARRAYSIZE.x) )
-		{
-			float distX = RayPos.x-(ARRAYSIZE.x-1);
-			xadv = -distX / RayDir.x;
-		}
-		else if( RayPos.x <= 0 )
-		{
-			float distX = -RayPos.x;
-			xadv = distX / RayDir.x;
-		}
-		if( RayPos.z >= (ARRAYSIZE.z))
-		{
-			float distZ = RayPos.z-(ARRAYSIZE.z-1);
-			zadv = -distZ / RayDir.z;
-		}
-		else if( RayPos.z <= 0 )
-		{
-			float distZ = -RayPos.z;
-			zadv = distZ / RayDir.z;
-		}
-		adv = max( adv, xadv );
-		adv = max( adv, zadv );*/
-	}
-
-	//RayPos += ARRAYSIZE;
+	float3 InvRayDir = -1./RayDir;
 
 	{
-		//adv += 0.001;
-		//RayPos += RayDir * adv;
+		float adv = 0;
+
+		// Trace to surface of the box on the outside.
+		float3 AdvancesPlus = (RayPos-(ARRAYSIZE))*InvRayDir;
+		float3 AdvancesMinus = RayPos*InvRayDir;
+		float3 Mins = min( AdvancesPlus, AdvancesMinus );
+		
+		// we also max with 0 incase we're inside of the box, so we don't backtrack.
+		adv = max( max( Mins.x, Mins.y ), max( Mins.z, 0 ) );
+		RayPos += RayDir * adv;
 	}
 	
+	float TravelLength = 1e20;
+	{
+		// Trace from where we are on the outside surface to the back
+		// end of the box.
+		
+		float3 distpluses  = float3( RayPos.xyz * InvRayDir );
+		float3 distminuses = float3( (RayPos.xyz-ARRAYSIZE) * InvRayDir );
+		float3 adv3 = max( distpluses, distminuses );
+		TravelLength = min( min( adv3.x, adv3.y ), adv3.z )-.5;
+	}
+	
+	RayPos += RayDir * .0001;
 
 	fixed3 Normal;
 	int3 CellD = int3( sign( RayDir ) );
@@ -93,13 +63,13 @@ float4 VT_TRACE( float3 ARRAYSIZE, float3 RayPos, float3 RayDir, float4 Accumula
 		int3 LowestAxis = 0.0;
 		float3 DirComps = -sign( RayDir ); //+1 if pos, -1 if neg
 		half3 DirAbs = abs( RayDir );
+		float Travel = 0;
 
-		UNITY_LOOP
 		int3 AO2 = ARRAYSIZE/2;
+		UNITY_LOOP
 		do
 		{
-			iteration++;
-
+#if 0
 			if( CellP.y >= ARRAYSIZE.y ) break;
 			if( CellP.y < 0 ) break;
 			if( CellP.x < 0 || 
@@ -107,7 +77,7 @@ float4 VT_TRACE( float3 ARRAYSIZE, float3 RayPos, float3 RayDir, float4 Accumula
 				CellP.x >= ARRAYSIZE.x || 
 				CellP.z >= ARRAYSIZE.z )
 				break;
-			
+#endif
 			//if( any( abs( CellP - AO2 - 0.5 ) > AO2 ) ) break;
 
 			//We are tracing into a cell.  Need to figure out how far we move
@@ -127,18 +97,21 @@ float4 VT_TRACE( float3 ARRAYSIZE, float3 RayPos, float3 RayDir, float4 Accumula
 				 ( ( Dists.y < Dists.z ) ? int3( 0, 1, 0 ) : int3( 0, 0, 1 ) );
 
 			//Find the closest axis.  We do this so we don't overshoot a hit.
-			MinDist = min( min( Dists.x, Dists.y ), Dists.z );
+			// We max with 0.0001 becuase we don't want a speckle when all dists
+			// are almost zero.
+			MinDist = max( min( min( Dists.x, Dists.y ), Dists.z ), .0001 );
 
 			//XXX XXX XXX
 			VT_FN( CellP, MinDist.xxxx, Accumulator );
 			
 			//We now know which direction we wish to step.
 			CellP += CellD * LowestAxis;
+			Travel += MinDist;
 
 			float3 Motion = MinDist * RayDir;
 			PartialRayPos = frac( PartialRayPos + Motion );
 
-		} while( iteration < VT_MAXITER );
+		} while( ++iteration < VT_MAXITER && Travel < TravelLength );
 	}
 	return Accumulator;
 }

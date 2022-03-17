@@ -10,17 +10,18 @@
 	}
 	SubShader
 	{
-		Tags { "RenderType"="Transparent" "Queue"="Transparent" }
+		Tags { "RenderType"="Transparent" "Queue"="Transparent+1" "LightMode"="ForwardBase" }
 		Blend One OneMinusSrcAlpha 
-		Cull Off
-		
+		Cull Front
+		ZWrite Off
+
 		Pass
 		{
 			CGPROGRAM
 			#pragma vertex vert
 			#pragma fragment frag
 			#pragma multi_compile_fog
-			
+			#pragma multi_compile _ VERTEXLIGHT_ON
 			#pragma target 5.0
 
 			#include "UnityCG.cginc"
@@ -49,30 +50,6 @@
 			float _GenAlpha;
 
 			float AudioLinkRemap(float t, float a, float b, float u, float v) { return ((t-a) / (b-a)) * (v-u) + u; }
-
-
-			float3 AudioLinkHSVtoRGB(float3 HSV)
-			{
-				float3 RGB = 0;
-				float C = HSV.z * HSV.y;
-				float H = HSV.x * 6;
-				float X = C * (1 - abs(fmod(H, 2) - 1));
-				if (HSV.y != 0)
-				{
-					float I = floor(H);
-					if (I == 0) { RGB = float3(C, X, 0); }
-					else if (I == 1) { RGB = float3(X, C, 0); }
-					else if (I == 2) { RGB = float3(0, C, X); }
-					else if (I == 3) { RGB = float3(0, X, C); }
-					else if (I == 4) { RGB = float3(X, 0, C); }
-					else { RGB = float3(C, 0, X); }
-				}
-				return RGB;
-				float M = HSV.z - C;
-				return RGB + M;
-			}
-
-
 			#define VT_FN my_density_function
 			#define VT_TRACE trace
 			void my_density_function( int3 pos, float distance, inout float4 accum )
@@ -106,32 +83,71 @@
 			fixed4 frag (v2f i, uint is_front : SV_IsFrontFace ) : SV_Target
 			{
 				UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( i );
-				float3 wpos = i.worldPos;
-				float3 wdir = normalize( wpos - _WorldSpaceCameraPos );
+				float3 wobj = mul(unity_ObjectToWorld, float4(0,0,0,1));
+				float3 wdir = normalize( i.worldPos - _WorldSpaceCameraPos );
+				float3 wpos = _WorldSpaceCameraPos + wdir * _ProjectionParams.y;
+
+				#ifdef VERTEXLIGHT_ON
 				
-				if( is_front < 1 )
+				// Use lights to control cutting plane
+				int lid0 = -1;
+				int lid1 = -1;
+				float cls = 1e20;
+				float4 lrads = 5 * rsqrt(unity_4LightAtten0);
+				float3 lxyz[4] = {
+					float3( unity_4LightPosX0[0], unity_4LightPosY0[0], unity_4LightPosZ0[0] ),
+					float3( unity_4LightPosX0[1], unity_4LightPosY0[1], unity_4LightPosZ0[1] ),
+					float3( unity_4LightPosX0[2], unity_4LightPosY0[2], unity_4LightPosZ0[2] ),
+					float3( unity_4LightPosX0[3], unity_4LightPosY0[3], unity_4LightPosZ0[3] ) };
+					
+				// Find cutting 
+				for( int i = 0; i < 4; i++ )
 				{
-					//Backface (we're inside)
-					wpos = _WorldSpaceCameraPos + wdir * _ProjectionParams.y;
-					wdir = normalize( wpos - _WorldSpaceCameraPos );
-					//TODO: Skip if we're outside the box.
+					if( (frac( lrads[i]*100 ) - .1)<0.05 )
+					{
+						float len = length( lxyz[i]- wobj );
+						if( len < cls )
+						{
+							lid0 = i;
+							cls = length( lxyz[i] - wobj );
+						}
+					}
 				}
-				else
+				for( int i = 0; i < 4; i++ )
 				{
-					// font-face do nothing.
+					if( i != lid0 && (frac( lrads[i]*100 ) - .2)<0.05 && floor( lrads[i]*100 ) == floor( lrads[lid0]*100 ) )
+					{
+						lid1 = i;
+					}
 				}
-				float3 lpos = mul(unity_WorldToObject, float4(wpos,1.0))+.5; 
+				
+				if( lid1 >= 0 && lid0 >= 0 )
+				{
+					float3 vecSlice = lxyz[lid0];
+					float3 vecNorm = normalize( lxyz[lid1] - vecSlice );
+					float3 vecDiff = vecSlice - wpos;
+					float vd = dot(wdir, vecNorm );
+					//return float4( length(vecNorm, 1.0 );
+					if( dot(vecDiff, vecNorm) > 0 )
+					{
+						if( vd < 0 ) discard;
+						float dist = dot(vecDiff, vecNorm)/vd;
+						wpos += wdir * dist;
+					}
+				}
+				#endif
+
+				float3 lpos = mul(unity_WorldToObject, float4(wpos,1.0))+.5; // hmm +.5 
 				float3 ldir = mul(unity_WorldToObject, float4(wdir,0.0));
-				
-				
-				fixed4 col = 1.;
+
 				
 				int3 samplesize; int dummy;
 				_Tex.GetDimensions( 0, samplesize.x, samplesize.y, samplesize.z, dummy );
+				//samplesize += 1; // XXX Currently hack - but sometimes it doesn't work out cleanly on the top edges.
 
 				ldir = normalize( ldir * samplesize );
-				float3 surfhit = lpos*(samplesize) + ldir * 0.003;
-				col = VT_TRACE( samplesize, surfhit, ldir, float4( 0, 0, 0, 1 ) );
+				float3 surfhit = lpos*(samplesize) + ldir;
+				float4 col = VT_TRACE( samplesize, surfhit, ldir, float4( 0, 0, 0, 1 ) );
 				col.a = 1.0 - col.a;
 				UNITY_APPLY_FOG(i.fogCoord, col);
 				return col;
