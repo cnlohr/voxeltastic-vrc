@@ -1,6 +1,6 @@
 //Only for personal use.  Not intended for medical diagnosis or anything else.
 
-// tcc dicomtoasset.c -run
+// tcc dicomtoasset_plain.c
 //
 // Convert .bin (raw byte-grid) to 3D texture asset.
 
@@ -33,7 +33,7 @@ int main( int argc, const char ** argv )
 	for( z = 0; z < sz; z++ )
 	{
 		char fin[128];
-		sprintf( fin, "o%07d", z+fso );
+		sprintf( fin, "i%05d", z+fso );
 		FILE * f = fopen( fin, "rb" );
 		if( !f || ferror( f ) )
 		{
@@ -54,6 +54,7 @@ int main( int argc, const char ** argv )
 			{
 				int16_t temp;
 				int r = fread( &temp, 1, 2, f );
+				temp/=4;
 				if( r != 2 )
 				{
 					fprintf( stderr, "Error reading all bytes needed (%d/%d)\n", r, total );
