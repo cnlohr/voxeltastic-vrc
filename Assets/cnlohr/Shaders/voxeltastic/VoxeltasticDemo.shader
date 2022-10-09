@@ -10,6 +10,7 @@
 		
 		[Toggle(ENABLE_CUTTING_EDGE)] ENABLE_CUTTING_EDGE ("Enable Cutting Edge", int ) = 1
 		[Toggle(DO_CUSTOM_EFFECT)] DO_CUSTOM_EFFECT ("Do Custom Effect", int ) = 0
+		[Toggle(ENABLE_Z_WRITE)] ENABLE_Z_WRITE ("Enable Z Write", int ) = 0
 	}
 	SubShader
 	{
@@ -20,7 +21,12 @@
 			Tags {"LightMode"="ForwardBase" }
 			Blend One OneMinusSrcAlpha 
 			Cull Front
-			ZWrite Off
+			
+			// Normally we would want to turn on ZWrite because it would cover name tags.
+			// But if we are transparent pixels, it will many times render in front of 
+			// user's clothing, and could make them appear naked.
+
+			ZWrite [ENABLE_Z_WRITE]
 			
 			CGPROGRAM
 			#pragma vertex vert
@@ -30,6 +36,7 @@
 			#pragma multi_compile _ VERTEXLIGHT_ON 
 			#pragma multi_compile_local _ ENABLE_CUTTING_EDGE
 			#pragma multi_compile_local _ DO_CUSTOM_EFFECT
+			#pragma multi_compile_local _ ENABLE_Z_WRITE
 			#pragma target 5.0
 
 			#include "UnityCG.cginc"
@@ -292,6 +299,9 @@
 #else
 				outDepth = clipPosSurface.z / clipPosSurface.w *0.5+0.5;
 #endif
+				#ifdef ENABLE_Z_WRITE
+				if( col.a > 0.991 ) discard;
+				#endif
 
 				col.a = 1.0 - col.a;
 				UNITY_APPLY_FOG(i.fogCoord, col);
