@@ -12,7 +12,8 @@
 #define VT_MAXITER 511
 #endif
 
-float4 VT_TRACE( float3 ARRAYSIZE, float3 RayPos, float3 RayDir, float4 Accumulator  )
+// The return of RayPos actually is the surface of the object where we started tracing.
+float4 VT_TRACE( float3 ARRAYSIZE, inout float3 RayPos, float3 RayDir, float4 Accumulator, float TravelLength = 1e20  )
 {
 	float3 InvRayDir = -1./RayDir;
 
@@ -27,9 +28,9 @@ float4 VT_TRACE( float3 ARRAYSIZE, float3 RayPos, float3 RayDir, float4 Accumula
 		// we also max with 0 incase we're inside of the box, so we don't backtrack.
 		adv = max( max( Mins.x, Mins.y ), max( Mins.z, 0 ) );
 		RayPos += RayDir * adv;
+		TravelLength -= adv;
 	}
 	
-	float TravelLength = 1e20;
 	{
 		// Trace from where we are on the outside surface to the back
 		// end of the box.
@@ -37,7 +38,8 @@ float4 VT_TRACE( float3 ARRAYSIZE, float3 RayPos, float3 RayDir, float4 Accumula
 		float3 distpluses  = float3( RayPos.xyz * InvRayDir );
 		float3 distminuses = float3( (RayPos.xyz-ARRAYSIZE) * InvRayDir );
 		float3 adv3 = max( distpluses, distminuses );
-		TravelLength = min( min( adv3.x, adv3.y ), adv3.z )-.5;
+		float backOfBoxTravelLength = min( min( adv3.x, adv3.y ), adv3.z )-.5;
+		TravelLength = min( backOfBoxTravelLength, TravelLength );
 	}
 	
 	RayPos += RayDir * .0001;
@@ -67,7 +69,7 @@ float4 VT_TRACE( float3 ARRAYSIZE, float3 RayPos, float3 RayDir, float4 Accumula
 
 		int3 AO2 = ARRAYSIZE/2;
 		UNITY_LOOP
-		do
+		while( ++iteration < VT_MAXITER && Travel < TravelLength )
 		{
 #if 0
 			if( CellP.y >= ARRAYSIZE.y ) break;
@@ -110,8 +112,7 @@ float4 VT_TRACE( float3 ARRAYSIZE, float3 RayPos, float3 RayDir, float4 Accumula
 
 			float3 Motion = MinDist * RayDir;
 			PartialRayPos = frac( PartialRayPos + Motion );
-
-		} while( ++iteration < VT_MAXITER && Travel < TravelLength );
+		} 
 	}
 	return Accumulator;
 }
