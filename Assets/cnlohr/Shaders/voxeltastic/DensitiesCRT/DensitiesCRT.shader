@@ -234,14 +234,15 @@
 				vox.z = vox.y / FlexCRTSize.x;
 				vox.y %= FlexCRTSize.x;
 				
-				float4 noise4 = tanoise4( float4( vox*.3 + float3( 0, _Time.y*.05, _Time.y*.25 ), _Time.y * .1 ) );
+				float4 noise4 = tanoise4( float4( vox*.2 + float3( 0, _Time.y*.05, _Time.y*.25 ), _Time.y * .1 ) );
 				float4 noiseB = tanoise4( float4( vox*.2 + float3( 0, _Time.y*.05, -_Time.y*.25 ), _Time.y * 1.1 ) );
 
-				float4 color = saturate( float4( 0, 0, 0, -.13 ) + float4( noiseB.rgb, noise4.a ) * float4( 1, 1, 1, 0.2 ) );
+
+				float4 color = saturate( float4( 0, 0, 0, -.4 ) + float4( noiseB.rgb, noise4.a ) * float4( 1, 1, 1, 0.6 ) );
 				
 				// Force vividness to be high.
 				float minc = min( min( color.r, color.g ), color.b );
-				color.rgb = normalize( color.rgb - minc );
+				color.rgb = normalize( color.rgb - minc )*1.4;
 				return color;
 			}
 			
