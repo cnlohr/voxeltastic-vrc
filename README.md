@@ -17,4 +17,5 @@ It is written as a generic shader that:
 
 
 Demo here: https://github.com/cnlohr/voxeltastic-vrc/blob/master/Assets/cnlohr/Shaders/voxeltastic/VoxeltasticDemo.shader
+
 Underlying Marcher here: https://github.com/cnlohr/voxeltastic-vrc/blob/master/Assets/cnlohr/Shaders/voxeltastic/voxeltastic.cginc
