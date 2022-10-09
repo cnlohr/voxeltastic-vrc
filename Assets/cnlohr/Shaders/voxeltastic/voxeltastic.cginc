@@ -69,7 +69,7 @@ float4 VT_TRACE( float3 ARRAYSIZE, inout float3 RayPos, float3 RayDir, float4 Ac
 
 		int3 AO2 = ARRAYSIZE/2;
 		UNITY_LOOP
-		do
+		while( ++iteration < VT_MAXITER && Travel < TravelLength )
 		{
 #if 0
 			if( CellP.y >= ARRAYSIZE.y ) break;
@@ -112,8 +112,7 @@ float4 VT_TRACE( float3 ARRAYSIZE, inout float3 RayPos, float3 RayDir, float4 Ac
 
 			float3 Motion = MinDist * RayDir;
 			PartialRayPos = frac( PartialRayPos + Motion );
-
-		} while( ++iteration < VT_MAXITER && Travel < TravelLength );
+		} 
 	}
 	return Accumulator;
 }

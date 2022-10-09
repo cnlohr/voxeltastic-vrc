@@ -1,4 +1,4 @@
-﻿Shader "Unlit/VoxeltasticWifiData"
+﻿Shader "Unlit/VoxeltasticDemo"
 {
 	Properties
 	{
@@ -8,8 +8,8 @@
 		_MaxVal ("Min Val", float ) = 1.0
 		_GenAlpha ("Gen Alpha", float ) = 1.0
 		
-		[Toggle(ENABLE_CUTTING_EDGE)] ENABLE_CUTTING_EDGE ("Enable Cutting Edge", int ) = 0.0
-		[Toggle(DO_CUSTOM_EFFECT)] DO_CUSTOM_EFFECT ("Do Custom Effect", int ) = 0.0
+		[Toggle(ENABLE_CUTTING_EDGE)] ENABLE_CUTTING_EDGE ("Enable Cutting Edge", int ) = 1
+		[Toggle(DO_CUSTOM_EFFECT)] DO_CUSTOM_EFFECT ("Do Custom Effect", int ) = 0
 	}
 	SubShader
 	{
@@ -20,15 +20,16 @@
 			Tags {"LightMode"="ForwardBase" }
 			Blend One OneMinusSrcAlpha 
 			Cull Front
-			ZWrite On
+			ZWrite Off
 			
 			CGPROGRAM
 			#pragma vertex vert
 			#pragma fragment frag alpha earlydepthstencil
 
 			#pragma multi_compile_fog
-			#pragma shader_feature_local ENABLE_CUTTING_EDGE DO_CUSTOM_EFFECT
-			#pragma multi_compile _ VERTEXLIGHT_ON
+			#pragma multi_compile _ VERTEXLIGHT_ON 
+			#pragma multi_compile_local _ ENABLE_CUTTING_EDGE
+			#pragma multi_compile_local _ DO_CUSTOM_EFFECT
 			#pragma target 5.0
 
 			#include "UnityCG.cginc"
@@ -87,9 +88,10 @@
 			{
 				
 				float a = 0.0;
-				a += 1.0/length( pos - (float3(sin(_Time.y), -.4, cos(_Time.y) )*10+16 ) );
-				a += 1.0/length( pos - (float3(sin(_Time.y+2.1), -.6, cos(_Time.y+2.1) )*10+16 ) );
-				a += 1.0/length( pos - (float3(sin(_Time.y+4.2), -.8, cos(_Time.y+4.2) )*10+16 ) );
+				float usetime = _Time.y / 6.0;
+				a += 1.0/length( pos - (float3(sin(usetime), -.4, cos(usetime) )*10+16 ) );
+				a += 1.0/length( pos - (float3(sin(usetime+2.1), -.6, cos(usetime+2.1) )*10+16 ) );
+				a += 1.0/length( pos - (float3(sin(usetime+4.2), -.8, cos(usetime+4.2) )*10+16 ) );
 
 				a = AudioLinkRemap( a, _MinVal, _MaxVal, 0, 1 );
 				a = saturate( a );
@@ -115,6 +117,20 @@
 			{
 				SHADOW_CASTER_FRAGMENT(data);
 			}
+
+
+            // Inspired by Internal_ScreenSpaceeShadow implementation.
+			// This code can be found on google if you search for "computeCameraSpacePosFromDepthAndInvProjMat"
+            float GetLinearZFromZDepth_WorksWithMirrors(float zDepthFromMap, float2 screenUV) {
+                #if defined(UNITY_REVERSED_Z)
+                    zDepthFromMap = 1 - zDepthFromMap;
+                #endif
+				if( zDepthFromMap >= 1.0 ) return _ProjectionParams.z;
+                float4 clipPos = float4(screenUV.xy, zDepthFromMap, 1.0);
+                clipPos.xyz = 2.0f * clipPos.xyz - 1.0f;
+                float2 camPos = mul(unity_CameraInvProjection, clipPos).zw;
+				return -camPos.x / camPos.y;
+            }
 
 
 			v2f vert (appdata v)
@@ -144,7 +160,6 @@
 				return o;
 			}
 
-
 			// was SV_DepthLessEqual
 			fixed4 frag (v2f i, uint is_front : SV_IsFrontFace, out float outDepth : SV_Depth ) : SV_Target
 			{
@@ -161,12 +176,16 @@
 
 				// Calculate our UV within the screen (for reading depth buffer)
 				float2 screenUV = i.screenPosition.xy * perspectiveDivide;
-				float eyeDepthWorld = LinearEyeDepth( SAMPLE_DEPTH_TEXTURE( _CameraDepthTexture, screenUV) );
+				float eyeDepthWorld =
+					GetLinearZFromZDepth_WorksWithMirrors( 
+						SAMPLE_DEPTH_TEXTURE( _CameraDepthTexture, screenUV), 
+						screenUV ) * perspectiveFactor;
 				
 				// eyeDepthWorld is in world space, it is where the "termination" of our ray should happen, or rather
 				// how far away from the camera we should be.
+				float3 worldPosModified = _WorldSpaceCameraPos;
 
-				#if defined( VERTEXLIGHT_ON ) && defined( ENABLE_CUTTING_EDGE )
+				#if VERTEXLIGHT_ON && ENABLE_CUTTING_EDGE
 					// We use a cutting edge with lights.
 					// This is not needed, but an interesting feature to add.
 					// Use lights to control cutting plane
@@ -208,23 +227,34 @@
 					{
 						float3 vecSlice = lxyz[lid0];
 						float3 vecNorm = normalize( lxyz[lid1] - vecSlice );
-						float3 vecDiff = vecSlice - _WorldSpaceCameraPos;
+						float3 vecDiff = vecSlice - worldPosModified;
 						float vd = dot(worldSpaceDirection, vecNorm );
-						//return float4( length(vecNorm, 1.0 );
+
+						float dist = dot(vecDiff, vecNorm)/vd;
+
 						if( dot(vecDiff, vecNorm) > 0 )
 						{
 							if( vd < 0 ) discard;
-							float dist = dot(vecDiff, vecNorm)/vd;
-							_WorldSpaceCameraPos += worldSpaceDirection * dist;
+							worldPosModified += worldSpaceDirection * dist;
+						}
+						else
+						{
+							if( vd < 0 )
+							{
+								// Tricky:  We also want to z out on the slicing plane.
+								// XXX: I have no idea why you have to / perspectiveFactor.
+								// Like literally, no idea.
+								// 
+								eyeDepthWorld = dist;
+							}
 						}
 					}
 				#endif
 
-
 				// We transform into object space for operations.
 
-				float3 objectSpaceCamera = mul(unity_WorldToObject, float4(_WorldSpaceCameraPos,1.0));
-				float3 objectSpaceEyeDepthHit = mul(unity_WorldToObject, float4( _WorldSpaceCameraPos + eyeDepthWorld * worldSpaceDirection, 1.0 ) );
+				float3 objectSpaceCamera = mul(unity_WorldToObject, float4(worldPosModified,1.0));
+				float3 objectSpaceEyeDepthHit = mul(unity_WorldToObject, float4( worldPosModified + eyeDepthWorld * worldSpaceDirection, 1.0 ) );
 				float3 objectSpaceDirection = mul(unity_WorldToObject, float4(worldSpaceDirection,0.0));
 				
 				// We want to transform into the local object space.
@@ -232,8 +262,7 @@
 				#ifdef DO_CUSTOM_EFFECT
 				int3 samplesize = 32;
 				#else
-				int3 samplesize; int dummy;
-				_Tex.GetDimensions( 0, samplesize.x, samplesize.y, samplesize.z, dummy );
+				int3 samplesize; int dummy; _Tex.GetDimensions( 0, samplesize.x, samplesize.y, samplesize.z, dummy );
 				#endif
 				
 				// This has been commented out for a long time.
@@ -241,9 +270,8 @@
 
 				objectSpaceDirection = normalize( objectSpaceDirection * samplesize );
 				float3 surfhit = objectSpaceCamera*(samplesize);
-				float TravelLength = length( (objectSpaceEyeDepthHit - objectSpaceCamera) * samplesize) * perspectiveFactor;
+				float TravelLength = length( (objectSpaceEyeDepthHit - objectSpaceCamera) * samplesize);
 				float4 col = VT_TRACE( samplesize, surfhit, objectSpaceDirection, float4( 0, 0, 0, 1 ), TravelLength );
-
 
 				// Compute what our Z value should be, so the front of our shape appears on top of
 				// objects inside the volume of the traced area.
@@ -252,7 +280,12 @@
 				float zDistanceWorldSpace = length( WorldSpace_StartOfTrace - _WorldSpaceCameraPos );
 				float3 WorldSpace_BasedOnComputedDepth = normalize( i.worldPos - _WorldSpaceCameraPos ) * zDistanceWorldSpace + _WorldSpaceCameraPos;
 				float4 clipPosSurface = mul(UNITY_MATRIX_VP, float4(WorldSpace_BasedOnComputedDepth, 1.0));
+
+#if defined(UNITY_REVERSED_Z)
 				outDepth = clipPosSurface.z / clipPosSurface.w;
+#else
+				outDepth = clipPosSurface.z / clipPosSurface.w *0.5+0.5;
+#endif
 
 				col.a = 1.0 - col.a;
 				UNITY_APPLY_FOG(i.fogCoord, col);
@@ -267,7 +300,7 @@
 		// using macros from UnityCG.cginc
 		Pass
 		{
-			Tags {"RenderType"="Transparent" "Queue"="Transparent+1" "LightMode"="ShadowCaster"}
+			Tags {"LightMode"="ShadowCaster"}
 			Cull Front
 			ZWrite On
 			CGPROGRAM
