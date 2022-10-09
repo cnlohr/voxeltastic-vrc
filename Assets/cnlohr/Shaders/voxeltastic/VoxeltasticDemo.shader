@@ -2,7 +2,8 @@
 {
 	Properties
 	{
-		_Tex ("Texture", 3D) = "white" {}
+		_Tex ("Texture (3D)", 3D) = "white" {}
+		_Tex2D ("Texture (2D)", 2D) = "white" {}
 		_ColorRamp( "Color Ramp", 2D ) = "white" { }
 		_MinVal ("Min Val", float ) = 0.6
 		_MaxVal ("Min Val", float ) = 1.0
@@ -11,6 +12,7 @@
 		[Toggle(ENABLE_CUTTING_EDGE)] ENABLE_CUTTING_EDGE ("Enable Cutting Edge", int ) = 1
 		[Toggle(DO_CUSTOM_EFFECT)] DO_CUSTOM_EFFECT ("Do Custom Effect", int ) = 0
 		[Toggle(ENABLE_Z_WRITE)] ENABLE_Z_WRITE ("Enable Z Write", int ) = 0
+		[Toggle(DO_2D3D_TEXTURE)] DO_2D3D_TEXTURE ("Upconvert 2D to 3D Texture (like a CRT)", int ) = 0
 	}
 	SubShader
 	{
@@ -35,7 +37,7 @@
 			#pragma multi_compile_fog
 			#pragma multi_compile _ VERTEXLIGHT_ON 
 			#pragma multi_compile_local _ ENABLE_CUTTING_EDGE
-			#pragma multi_compile_local _ DO_CUSTOM_EFFECT
+			#pragma multi_compile_local _ DO_CUSTOM_EFFECT DO_2D3D_TEXTURE
 			#pragma multi_compile_local _ ENABLE_Z_WRITE
 			#pragma target 5.0
 
@@ -61,58 +63,77 @@
 				UNITY_VERTEX_OUTPUT_STEREO
 			};
 
-			Texture3D<float4> _Tex;
 			sampler2D _ColorRamp;
 			float _MinVal;
 			float _MaxVal;
 			float _GenAlpha;
+
 			UNITY_DECLARE_DEPTH_TEXTURE( _CameraDepthTexture );
+
+			uint3 samplesize; 
+
+			// Utility Function
+			float AudioLinkRemap(float t, float a, float b, float u, float v) { return ((t-a) / (b-a)) * (v-u) + u; }
   
 			// You have to tell voxeltastic what function to actually use for its
 			// volume tracing.
 			#ifdef DO_CUSTOM_EFFECT
 				#define VT_FN custom_effect_function
 				#define CUSTOM_SAMPLE_SIZE uint3( 32, 32, 32 )
+				void custom_effect_function( int3 pos, float distance, float travel, inout float4 accum )
+				{
+					float a = 0.0;
+					float usetime = _Time.y / 6.0;
+					a += 1.0/length( pos - (float3(sin(usetime), -.4, cos(usetime) )*10+16 ) );
+					a += 1.0/length( pos - (float3(sin(usetime+2.1), -.6, cos(usetime+2.1) )*10+16 ) );
+					a += 1.0/length( pos - (float3(sin(usetime+4.2), -.8, cos(usetime+4.2) )*10+16 ) );
+
+					a = AudioLinkRemap( a, _MinVal, _MaxVal, 0, 1 );
+					a = saturate( a );
+					float initiala = accum.a;
+					float this_alpha = a*distance*accum.a*_GenAlpha;
+					
+					// OPTIONAL: Enable or disable this to either smoothly interact with Z
+					// or to harshly interact with Z (this is very interesting).
+					// Having this code makes it nice and smooth.
+					this_alpha = min( travel/distance, 1.0 ) * this_alpha;
+					
+					float3 color = tex2Dlod( _ColorRamp, float4( a, 0, 0, 0 ) );
+					accum.rgb += this_alpha * color;//lerp( accum.rgba, float4( normalize(AudioLinkHSVtoRGB(float3( a,1,1 ))), 0.0 ), this_alpha );
+					accum.a = initiala - this_alpha;
+				}			
+			#elif DO_2D3D_TEXTURE
+				#define VT_FN convert2d3d_function
+				Texture2D<float4> _Tex2D;
+				void convert2d3d_function( int3 pos, float distance, float travel, inout float4 accum )
+				{
+					float4 color = _Tex2D.Load( int4( pos.x, pos.y + pos.z * samplesize.x, 0, 0 ) );
+					float this_alpha = color.a;
+					// OPTIONAL: Enable or disable this to either smoothly interact with Z
+					// or to harshly interact with Z (this is very interesting).
+					// Having this code makes it nice and smooth.
+					this_alpha = min( travel/distance, 1.0 ) * this_alpha;
+					float initiala = accum.a;
+					accum.rgb += this_alpha * color;
+					accum.a = initiala - this_alpha;
+				}
 			#else
 				#define VT_FN my_density_function
+				Texture3D<float4> _Tex;
+				void my_density_function( int3 pos, float distance, float travel, inout float4 accum )
+				{
+					float a = _Tex.Load( int4( pos.xyz, 0.0 ) ).a;
+					a = AudioLinkRemap( a, _MinVal, _MaxVal, 0, 1 );
+					a = saturate( a );
+					float initiala = accum.a;
+					float this_alpha = a*distance*accum.a*_GenAlpha;
+					float3 color = tex2Dlod( _ColorRamp, float4( a, 0, 0, 0 ) );
+					accum.rgb += this_alpha * color;//lerp( accum.rgba, float4( normalize(AudioLinkHSVtoRGB(float3( a,1,1 ))), 0.0 ), this_alpha );
+					accum.a = initiala - this_alpha;
+				}
 			#endif
 			#define VT_TRACE trace
-			
-			float AudioLinkRemap(float t, float a, float b, float u, float v) { return ((t-a) / (b-a)) * (v-u) + u; }
-			void my_density_function( int3 pos, float distance, float travel, inout float4 accum )
-			{
-				float a = _Tex.Load( int4( pos.xyz, 0.0 ) ).a;
-				a = AudioLinkRemap( a, _MinVal, _MaxVal, 0, 1 );
-				a = saturate( a );
-				float initiala = accum.a;
-				float this_alpha = a*distance*accum.a*_GenAlpha;
-				float3 color = tex2Dlod( _ColorRamp, float4( a, 0, 0, 0 ) );
-				accum.rgb += this_alpha * color;//lerp( accum.rgba, float4( normalize(AudioLinkHSVtoRGB(float3( a,1,1 ))), 0.0 ), this_alpha );
-				accum.a = initiala - this_alpha;
-			}
 
-			void custom_effect_function( int3 pos, float distance, float travel, inout float4 accum )
-			{
-				float a = 0.0;
-				float usetime = _Time.y / 6.0;
-				a += 1.0/length( pos - (float3(sin(usetime), -.4, cos(usetime) )*10+16 ) );
-				a += 1.0/length( pos - (float3(sin(usetime+2.1), -.6, cos(usetime+2.1) )*10+16 ) );
-				a += 1.0/length( pos - (float3(sin(usetime+4.2), -.8, cos(usetime+4.2) )*10+16 ) );
-
-				a = AudioLinkRemap( a, _MinVal, _MaxVal, 0, 1 );
-				a = saturate( a );
-				float initiala = accum.a;
-				float this_alpha = a*distance*accum.a*_GenAlpha;
-				
-				// OPTIONAL: Enable or disable this to either smoothly interact with Z
-				// or to harshly interact with Z (this is very interesting).
-				// Having this code makes it nice and smooth.
-				this_alpha = min( travel/distance, 1.0 ) * this_alpha;
-				
-				float3 color = tex2Dlod( _ColorRamp, float4( a, 0, 0, 0 ) );
-				accum.rgb += this_alpha * color;//lerp( accum.rgba, float4( normalize(AudioLinkHSVtoRGB(float3( a,1,1 ))), 0.0 ), this_alpha );
-				accum.a = initiala - this_alpha;
-			}			
 
 			#include "Voxeltastic.cginc"
 
@@ -253,9 +274,14 @@
 				// We want to transform into the local object space.
 				
 				#ifdef DO_CUSTOM_EFFECT
-				uint3 samplesize = CUSTOM_SAMPLE_SIZE;
+				samplesize = CUSTOM_SAMPLE_SIZE;
+				#elif DO_2D3D_TEXTURE
+				int dummy; _Tex2D.GetDimensions( 0, samplesize.x, samplesize.y, dummy );
+				samplesize.x=samplesize.x;
+				samplesize.z=samplesize.y/samplesize.x;
+				samplesize.y=samplesize.x;
 				#else
-				uint3 samplesize; int dummy; _Tex.GetDimensions( 0, samplesize.x, samplesize.y, samplesize.z, dummy );
+				int dummy; _Tex.GetDimensions( 0, samplesize.x, samplesize.y, samplesize.z, dummy );
 				#endif
 				
 				objectSpaceDirection = normalize( objectSpaceDirection * samplesize );
