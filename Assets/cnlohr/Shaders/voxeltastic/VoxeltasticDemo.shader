@@ -119,18 +119,18 @@
 			}
 
 
-            // Inspired by Internal_ScreenSpaceeShadow implementation.
+			// Inspired by Internal_ScreenSpaceeShadow implementation.
 			// This code can be found on google if you search for "computeCameraSpacePosFromDepthAndInvProjMat"
-            float GetLinearZFromZDepth_WorksWithMirrors(float zDepthFromMap, float2 screenUV) {
-                #if defined(UNITY_REVERSED_Z)
-                    zDepthFromMap = 1 - zDepthFromMap;
-                #endif
+			float GetLinearZFromZDepth_WorksWithMirrors(float zDepthFromMap, float2 screenUV) {
+				#if defined(UNITY_REVERSED_Z)
+					zDepthFromMap = 1 - zDepthFromMap;
+				#endif
 				if( zDepthFromMap >= 1.0 ) return _ProjectionParams.z;
-                float4 clipPos = float4(screenUV.xy, zDepthFromMap, 1.0);
-                clipPos.xyz = 2.0f * clipPos.xyz - 1.0f;
-                float2 camPos = mul(unity_CameraInvProjection, clipPos).zw;
+				float4 clipPos = float4(screenUV.xy, zDepthFromMap, 1.0);
+				clipPos.xyz = 2.0f * clipPos.xyz - 1.0f;
+				float2 camPos = mul(unity_CameraInvProjection, clipPos).zw;
 				return -camPos.x / camPos.y;
-            }
+			}
 
 
 			v2f vert (appdata v)
