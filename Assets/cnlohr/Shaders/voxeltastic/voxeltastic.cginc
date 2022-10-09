@@ -13,7 +13,7 @@
 #endif
 
 // The return of RayPos actually is the surface of the object where we started tracing.
-float4 VT_TRACE( float3 ARRAYSIZE, inout float3 RayPos, float3 RayDir, float4 Accumulator, float TravelLength = 1e20  )
+float4 VT_TRACE( uint3 ARRAYSIZE, inout float3 RayPos, float3 RayDir, float4 Accumulator, float TravelLength = 1e20  )
 {
 	float3 InvRayDir = -1./RayDir;
 

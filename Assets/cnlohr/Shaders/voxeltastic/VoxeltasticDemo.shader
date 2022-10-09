@@ -56,9 +56,8 @@
 				float2 uv : TEXCOORD0;
 				UNITY_FOG_COORDS(1)
 				float4 vertex : SV_POSITION;
-				float3 worldPos : TEXCOORD2;
-				float4 screenPosition : TEXCOORD1; // Trivially refactorable to a float2
-				float3 worldDirection : TEXCOORD3;
+				float3 worldPos : WORLDPOS;
+				float2 screenPosition : SCREENPOS; // Trivially refactorable to a float2
 				UNITY_VERTEX_OUTPUT_STEREO
 			};
 
@@ -69,16 +68,17 @@
 			float _GenAlpha;
 			UNITY_DECLARE_DEPTH_TEXTURE( _CameraDepthTexture );
   
-			float AudioLinkRemap(float t, float a, float b, float u, float v) { return ((t-a) / (b-a)) * (v-u) + u; }
-
+			// You have to tell voxeltastic what function to actually use for its
+			// volume tracing.
 			#ifdef DO_CUSTOM_EFFECT
 				#define VT_FN custom_effect_function
+				#define CUSTOM_SAMPLE_SIZE uint3( 32, 32, 32 )
 			#else
 				#define VT_FN my_density_function
 			#endif
 			#define VT_TRACE trace
 			
-			
+			float AudioLinkRemap(float t, float a, float b, float u, float v) { return ((t-a) / (b-a)) * (v-u) + u; }
 			void my_density_function( int3 pos, float distance, float travel, inout float4 accum )
 			{
 				float a = _Tex.Load( int4( pos.xyz, 0.0 ) ).a;
@@ -93,7 +93,6 @@
 
 			void custom_effect_function( int3 pos, float distance, float travel, inout float4 accum )
 			{
-				
 				float a = 0.0;
 				float usetime = _Time.y / 6.0;
 				a += 1.0/length( pos - (float3(sin(usetime), -.4, cos(usetime) )*10+16 ) );
@@ -116,21 +115,6 @@
 			}			
 
 			#include "Voxeltastic.cginc"
-
-
-
-			struct shadowHelper
-			{
-				float4 vertex;
-				float3 normal;
-				V2F_SHADOW_CASTER;
-			};
-
-			float4 colOut(shadowHelper data)
-			{
-				SHADOW_CASTER_FRAGMENT(data);
-			}
-
 
 			// Inspired by Internal_ScreenSpaceeShadow implementation.
 			// This code can be found on google if you search for "computeCameraSpacePosFromDepthAndInvProjMat"
@@ -157,9 +141,6 @@
 				o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
 				o.vertex = UnityObjectToClipPos(v.vertex);
 				o.uv = v.uv;
-				// Subtract camera position from vertex position in world
-				// to get a ray pointing from the camera to this vertex.
-				o.worldDirection = mul(unity_ObjectToWorld, v.vertex).xyz - _WorldSpaceCameraPos;
 
 				// Save the clip space position so we can use it later.
 				// This also handles situations where the Y is flipped.
@@ -167,8 +148,7 @@
 							
 				// Tricky, constants like the 0.5 and the second paramter
 				// need to be premultiplied by o.vertex.w.
-				o.screenPosition = float4( TransformStereoScreenSpaceTex(
-					suv+0.5*o.vertex.w, o.vertex.w), 0, o.vertex.w );
+				o.screenPosition = TransformStereoScreenSpaceTex( suv+0.5*o.vertex.w, o.vertex.w );
 				UNITY_TRANSFER_FOG(o,o.vertex);
 				return o;
 			}
@@ -198,6 +178,7 @@
 				// how far away from the camera we should be.
 				float3 worldPosModified = _WorldSpaceCameraPos;
 
+				// This allows you to "slice" the volume if you so choose.
 				#if VERTEXLIGHT_ON && ENABLE_CUTTING_EDGE
 					// We use a cutting edge with lights.
 					// This is not needed, but an interesting feature to add.
@@ -265,7 +246,6 @@
 				#endif
 
 				// We transform into object space for operations.
-
 				float3 objectSpaceCamera = mul(unity_WorldToObject, float4(worldPosModified,1.0));
 				float3 objectSpaceEyeDepthHit = mul(unity_WorldToObject, float4( _WorldSpaceCameraPos + eyeDepthWorld * worldSpaceDirection, 1.0 ) );
 				float3 objectSpaceDirection = mul(unity_WorldToObject, float4(worldSpaceDirection,0.0));
@@ -273,14 +253,11 @@
 				// We want to transform into the local object space.
 				
 				#ifdef DO_CUSTOM_EFFECT
-				int3 samplesize = 32;
+				uint3 samplesize = CUSTOM_SAMPLE_SIZE;
 				#else
-				int3 samplesize; int dummy; _Tex.GetDimensions( 0, samplesize.x, samplesize.y, samplesize.z, dummy );
+				uint3 samplesize; int dummy; _Tex.GetDimensions( 0, samplesize.x, samplesize.y, samplesize.z, dummy );
 				#endif
 				
-				// This has been commented out for a long time.
-				//samplesize += 1; // XXX Currently hack - but sometimes it doesn't work out cleanly on the top edges.
-
 				objectSpaceDirection = normalize( objectSpaceDirection * samplesize );
 				float3 surfhit = objectSpaceCamera*(samplesize);
 				float TravelLength = length( (objectSpaceEyeDepthHit - objectSpaceCamera) * samplesize);
@@ -317,6 +294,8 @@
 		Pass
 		{
 			Tags {"LightMode"="ShadowCaster"}
+			
+			// We actually only want to draw backfaces on the shadowcast.
 			Cull Front
 			ZWrite On
 			CGPROGRAM
