@@ -15,7 +15,7 @@ public class ZeroG : UdonSharpBehaviour
     }
     private void EnableSwimming()
     {
-        localPlayer.SetGravityStrength(.1f);
+        localPlayer.SetGravityStrength(.05f);
         //localPlayer.Immobilize(true);
     }
 
