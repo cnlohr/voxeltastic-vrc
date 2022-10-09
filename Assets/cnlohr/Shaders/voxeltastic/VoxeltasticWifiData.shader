@@ -7,15 +7,17 @@
 		_MinVal ("Min Val", float ) = 0.6
 		_MaxVal ("Min Val", float ) = 1.0
 		_GenAlpha ("Gen Alpha", float ) = 1.0
+		
+		[Toggle(ENABLE_CUTTING_EDGE)] ENABLE_CUTTING_EDGE ("Enable Cutting Edge", int ) = 0.0
+		[Toggle(DO_CUSTOM_EFFECT)] DO_CUSTOM_EFFECT ("Do Custom Effect", int ) = 0.0
 	}
 	SubShader
 	{
-		Tags {"RenderType"="Transparent" "LightMode"="ForwardBase"  "Queue"="Transparent+1" }
-		
+		Tags {"RenderType"="Transparent"  "Queue"="Transparent+1" }
 		
 		Pass
 		{
-			Tags {"RenderType"="Transparent" "LightMode"="ForwardBase"  "Queue"="Transparent+1" }
+			Tags {"LightMode"="ForwardBase" }
 			Blend One OneMinusSrcAlpha 
 			Cull Front
 			ZWrite On
@@ -25,6 +27,7 @@
 			#pragma fragment frag alpha earlydepthstencil
 
 			#pragma multi_compile_fog
+			#pragma shader_feature_local ENABLE_CUTTING_EDGE DO_CUSTOM_EFFECT
 			#pragma multi_compile _ VERTEXLIGHT_ON
 			#pragma target 5.0
 
@@ -59,8 +62,15 @@
 			UNITY_DECLARE_DEPTH_TEXTURE( _CameraDepthTexture );
   
 			float AudioLinkRemap(float t, float a, float b, float u, float v) { return ((t-a) / (b-a)) * (v-u) + u; }
-			#define VT_FN my_density_function
+
+			#ifdef DO_CUSTOM_EFFECT
+				#define VT_FN custom_effect_function
+			#else
+				#define VT_FN my_density_function
+			#endif
 			#define VT_TRACE trace
+			
+			
 			void my_density_function( int3 pos, float distance, inout float4 accum )
 			{
 				float a = _Tex.Load( int4( pos.xyz, 0.0 ) ).a;
@@ -71,7 +81,25 @@
 				float3 color = tex2Dlod( _ColorRamp, float4( a, 0, 0, 0 ) );
 				accum.rgb += this_alpha * color;//lerp( accum.rgba, float4( normalize(AudioLinkHSVtoRGB(float3( a,1,1 ))), 0.0 ), this_alpha );
 				accum.a = initiala - this_alpha;
+			}
+
+			void custom_effect_function( int3 pos, float distance, inout float4 accum )
+			{
+				
+				float a = 0.0;
+				a += 1.0/length( pos - (float3(sin(_Time.y), -.4, cos(_Time.y) )*10+16 ) );
+				a += 1.0/length( pos - (float3(sin(_Time.y+2.1), -.6, cos(_Time.y+2.1) )*10+16 ) );
+				a += 1.0/length( pos - (float3(sin(_Time.y+4.2), -.8, cos(_Time.y+4.2) )*10+16 ) );
+
+				a = AudioLinkRemap( a, _MinVal, _MaxVal, 0, 1 );
+				a = saturate( a );
+				float initiala = accum.a;
+				float this_alpha = a*distance*accum.a*_GenAlpha;
+				float3 color = tex2Dlod( _ColorRamp, float4( a, 0, 0, 0 ) );
+				accum.rgb += this_alpha * color;//lerp( accum.rgba, float4( normalize(AudioLinkHSVtoRGB(float3( a,1,1 ))), 0.0 ), this_alpha );
+				accum.a = initiala - this_alpha;
 			}			
+
 			#include "Voxeltastic.cginc"
 
 
@@ -117,91 +145,115 @@
 			}
 
 
-			//
+			// was SV_DepthLessEqual
 			fixed4 frag (v2f i, uint is_front : SV_IsFrontFace, out float outDepth : SV_Depth ) : SV_Target
 			{
 				UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( i );
-				float3 wobj = mul(unity_ObjectToWorld, float4(0,0,0,1));
-				float3 wdir = normalize( i.worldPos - _WorldSpaceCameraPos );
-				float3 wpos = _WorldSpaceCameraPos + wdir * _ProjectionParams.y;
+				float3 fullVectorFromEyeToGeometry = i.worldPos - _WorldSpaceCameraPos;
+				float3 worldSpaceDirection = normalize( fullVectorFromEyeToGeometry );
 
-
-				// Compute projective scaling factor...
+				// Compute projective scaling factor.
+				// perspectiveFactor is 1.0 for the center of the screen, and goes above 1.0 toward the edges,
+				// as the frustum extent is further away than if the zfar in the center of the screen
+				// went to the edges.
 				float perspectiveDivide = 1.0f / i.vertex.w;
+				float perspectiveFactor = length( fullVectorFromEyeToGeometry * perspectiveDivide );
+
 				// Calculate our UV within the screen (for reading depth buffer)
 				float2 screenUV = i.screenPosition.xy * perspectiveDivide;
-				float eyeDepth = LinearEyeDepth( SAMPLE_DEPTH_TEXTURE( _CameraDepthTexture, screenUV) );
+				float eyeDepthWorld = LinearEyeDepth( SAMPLE_DEPTH_TEXTURE( _CameraDepthTexture, screenUV) );
 				
-				#ifdef VERTEXLIGHT_ON
+				// eyeDepthWorld is in world space, it is where the "termination" of our ray should happen, or rather
+				// how far away from the camera we should be.
 
-				// Use lights to control cutting plane
-				int lid0 = -1;
-				int lid1 = -1;
-				float cls = 1e20;
-				float4 lrads = 5 * rsqrt(unity_4LightAtten0);
-				float3 lxyz[4] = {
-					float3( unity_4LightPosX0[0], unity_4LightPosY0[0], unity_4LightPosZ0[0] ),
-					float3( unity_4LightPosX0[1], unity_4LightPosY0[1], unity_4LightPosZ0[1] ),
-					float3( unity_4LightPosX0[2], unity_4LightPosY0[2], unity_4LightPosZ0[2] ),
-					float3( unity_4LightPosX0[3], unity_4LightPosY0[3], unity_4LightPosZ0[3] ) };
-					
-				// Find cutting 
-				int n;
-				for( n = 0; n < 4; n++ )
-				{
-					if( (frac( lrads[n]*100 ) - .1)<0.05 )
+				#if defined( VERTEXLIGHT_ON ) && defined( ENABLE_CUTTING_EDGE )
+					// We use a cutting edge with lights.
+					// This is not needed, but an interesting feature to add.
+					// Use lights to control cutting plane
+					int lid0 = -1;
+					int lid1 = -1;
+					float cls = 1e20;
+					float4 lrads = 5 * rsqrt(unity_4LightAtten0);
+					float3 lxyz[4] = {
+						float3( unity_4LightPosX0[0], unity_4LightPosY0[0], unity_4LightPosZ0[0] ),
+						float3( unity_4LightPosX0[1], unity_4LightPosY0[1], unity_4LightPosZ0[1] ),
+						float3( unity_4LightPosX0[2], unity_4LightPosY0[2], unity_4LightPosZ0[2] ),
+						float3( unity_4LightPosX0[3], unity_4LightPosY0[3], unity_4LightPosZ0[3] ) };
+						
+					// Find cutting 
+					float3 wobj = mul(unity_ObjectToWorld, float4(0,0,0,1));
+
+					int n;
+					for( n = 0; n < 4; n++ )
 					{
-						float len = length( lxyz[n]- wobj );
-						if( len < cls )
+						if( (frac( lrads[n]*100 ) - .1)<0.05 )
 						{
-							lid0 = n;
-							cls = length( lxyz[n] - wobj );
+							float len = length( lxyz[n]- wobj );
+							if( len < cls )
+							{
+								lid0 = n;
+								cls = length( lxyz[n] - wobj );
+							}
 						}
 					}
-				}
-				for( n = 0; n < 4; n++ )
-				{
-					if( n != lid0 && (frac( lrads[n]*100 ) - .2)<0.05 && floor( lrads[n]*100 ) == floor( lrads[lid0]*100 ) )
+					for( n = 0; n < 4; n++ )
 					{
-						lid1 = n;
+						if( n != lid0 && (frac( lrads[n]*100 ) - .2)<0.05 && floor( lrads[n]*100 ) == floor( lrads[lid0]*100 ) )
+						{
+							lid1 = n;
+						}
 					}
-				}
 
-				if( lid1 >= 0 && lid0 >= 0 )
-				{
-					float3 vecSlice = lxyz[lid0];
-					float3 vecNorm = normalize( lxyz[lid1] - vecSlice );
-					float3 vecDiff = vecSlice - wpos;
-					float vd = dot(wdir, vecNorm );
-					//return float4( length(vecNorm, 1.0 );
-					if( dot(vecDiff, vecNorm) > 0 )
+					if( lid1 >= 0 && lid0 >= 0 )
 					{
-						if( vd < 0 ) discard;
-						float dist = dot(vecDiff, vecNorm)/vd;
-						wpos += wdir * dist;
-						eyeDepth -= dist;
+						float3 vecSlice = lxyz[lid0];
+						float3 vecNorm = normalize( lxyz[lid1] - vecSlice );
+						float3 vecDiff = vecSlice - _WorldSpaceCameraPos;
+						float vd = dot(worldSpaceDirection, vecNorm );
+						//return float4( length(vecNorm, 1.0 );
+						if( dot(vecDiff, vecNorm) > 0 )
+						{
+							if( vd < 0 ) discard;
+							float dist = dot(vecDiff, vecNorm)/vd;
+							_WorldSpaceCameraPos += worldSpaceDirection * dist;
+						}
 					}
-				}
 				#endif
 
-				float3 lpos = mul(unity_WorldToObject, float4(wpos,1.0))+.5; // hmm +.5 
-				float3 ldir = mul(unity_WorldToObject, float4(wdir,0.0));
-				eyeDepth /= length( ldir );
-				outDepth = 1.0;
-				return float4( eyeDepth.xxx-100., 1.0 );
+
+				// We transform into object space for operations.
+
+				float3 objectSpaceCamera = mul(unity_WorldToObject, float4(_WorldSpaceCameraPos,1.0));
+				float3 objectSpaceEyeDepthHit = mul(unity_WorldToObject, float4( _WorldSpaceCameraPos + eyeDepthWorld * worldSpaceDirection, 1.0 ) );
+				float3 objectSpaceDirection = mul(unity_WorldToObject, float4(worldSpaceDirection,0.0));
+				
+				// We want to transform into the local object space.
+				
+				#ifdef DO_CUSTOM_EFFECT
+				int3 samplesize = 32;
+				#else
 				int3 samplesize; int dummy;
 				_Tex.GetDimensions( 0, samplesize.x, samplesize.y, samplesize.z, dummy );
+				#endif
+				
+				// This has been commented out for a long time.
 				//samplesize += 1; // XXX Currently hack - but sometimes it doesn't work out cleanly on the top edges.
 
-				ldir = normalize( ldir * samplesize );
-				float3 surfhit = lpos*(samplesize) + ldir;
-				float4 col = VT_TRACE( samplesize, surfhit, ldir, float4( 0, 0, 0, 1 ) );
+				objectSpaceDirection = normalize( objectSpaceDirection * samplesize );
+				float3 surfhit = objectSpaceCamera*(samplesize);
+				float TravelLength = length( (objectSpaceEyeDepthHit - objectSpaceCamera) * samplesize) * perspectiveFactor;
+				float4 col = VT_TRACE( samplesize, surfhit, objectSpaceDirection, float4( 0, 0, 0, 1 ), TravelLength );
 
 
-				// Update Z depth (based on ballpit balls)
-				float3 gpos = _WorldSpaceCameraPos + wdir * 0.1;
-				float4 clipPos = mul(UNITY_MATRIX_VP, float4(gpos, 1.0));
-				outDepth = clipPos.z / clipPos.w;
+				// Compute what our Z value should be, so the front of our shape appears on top of
+				// objects inside the volume of the traced area.
+				// surfhit is the location in object space where the ray "started"
+				float3 WorldSpace_StartOfTrace = mul(unity_ObjectToWorld, float4( (surfhit) / samplesize, 1.0 ));
+				float zDistanceWorldSpace = length( WorldSpace_StartOfTrace - _WorldSpaceCameraPos );
+				float3 WorldSpace_BasedOnComputedDepth = normalize( i.worldPos - _WorldSpaceCameraPos ) * zDistanceWorldSpace + _WorldSpaceCameraPos;
+				float4 clipPosSurface = mul(UNITY_MATRIX_VP, float4(WorldSpace_BasedOnComputedDepth, 1.0));
+				outDepth = clipPosSurface.z / clipPosSurface.w;
+
 				col.a = 1.0 - col.a;
 				UNITY_APPLY_FOG(i.fogCoord, col);
 				return col;
