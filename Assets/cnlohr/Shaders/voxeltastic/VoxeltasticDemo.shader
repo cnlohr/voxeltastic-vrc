@@ -245,7 +245,7 @@
 								// XXX: I have no idea why you have to / perspectiveFactor.
 								// Like literally, no idea.
 								// 
-								eyeDepthWorld = dist;
+								eyeDepthWorld = min( eyeDepthWorld, dist );
 							}
 						}
 					}
@@ -254,7 +254,7 @@
 				// We transform into object space for operations.
 
 				float3 objectSpaceCamera = mul(unity_WorldToObject, float4(worldPosModified,1.0));
-				float3 objectSpaceEyeDepthHit = mul(unity_WorldToObject, float4( worldPosModified + eyeDepthWorld * worldSpaceDirection, 1.0 ) );
+				float3 objectSpaceEyeDepthHit = mul(unity_WorldToObject, float4( _WorldSpaceCameraPos + eyeDepthWorld * worldSpaceDirection, 1.0 ) );
 				float3 objectSpaceDirection = mul(unity_WorldToObject, float4(worldSpaceDirection,0.0));
 				
 				// We want to transform into the local object space.
