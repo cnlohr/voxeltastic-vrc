@@ -97,6 +97,12 @@
 				a = saturate( a );
 				float initiala = accum.a;
 				float this_alpha = a*distance*accum.a*_GenAlpha;
+				
+				// OPTIONAL: Enable or disable this to either smoothly interact with Z
+				// or to harshly interact with Z (this is very interesting).
+				// Having this code makes it nice and smooth.
+				this_alpha = min( travel/distance, 1.0 ) * this_alpha;
+				
 				float3 color = tex2Dlod( _ColorRamp, float4( a, 0, 0, 0 ) );
 				accum.rgb += this_alpha * color;//lerp( accum.rgba, float4( normalize(AudioLinkHSVtoRGB(float3( a,1,1 ))), 0.0 ), this_alpha );
 				accum.a = initiala - this_alpha;
