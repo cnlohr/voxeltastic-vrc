@@ -65,11 +65,11 @@ float4 VT_TRACE( float3 ARRAYSIZE, inout float3 RayPos, float3 RayDir, float4 Ac
 		int3 LowestAxis = 0.0;
 		float3 DirComps = -sign( RayDir ); //+1 if pos, -1 if neg
 		half3 DirAbs = abs( RayDir );
-		float Travel = 0;
+		float Travel = TravelLength;
 
 		int3 AO2 = ARRAYSIZE/2;
 		UNITY_LOOP
-		while( ++iteration < VT_MAXITER && Travel < TravelLength )
+		while( ++iteration < VT_MAXITER && Travel > 0 )
 		{
 #if 0
 			if( CellP.y >= ARRAYSIZE.y ) break;
@@ -104,11 +104,11 @@ float4 VT_TRACE( float3 ARRAYSIZE, inout float3 RayPos, float3 RayDir, float4 Ac
 			MinDist = max( min( min( Dists.x, Dists.y ), Dists.z ), .0001 );
 
 			//XXX XXX XXX
-			VT_FN( CellP, MinDist.xxxx, Accumulator );
+			VT_FN( CellP, MinDist, Travel, Accumulator );
 			
 			//We now know which direction we wish to step.
 			CellP += CellD * LowestAxis;
-			Travel += MinDist;
+			Travel -= MinDist;
 
 			float3 Motion = MinDist * RayDir;
 			PartialRayPos = frac( PartialRayPos + Motion );
