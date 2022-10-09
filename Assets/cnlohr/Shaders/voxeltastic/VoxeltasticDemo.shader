@@ -72,7 +72,7 @@
 			#define VT_TRACE trace
 			
 			
-			void my_density_function( int3 pos, float distance, inout float4 accum )
+			void my_density_function( int3 pos, float distance, float travel, inout float4 accum )
 			{
 				float a = _Tex.Load( int4( pos.xyz, 0.0 ) ).a;
 				a = AudioLinkRemap( a, _MinVal, _MaxVal, 0, 1 );
@@ -84,7 +84,7 @@
 				accum.a = initiala - this_alpha;
 			}
 
-			void custom_effect_function( int3 pos, float distance, inout float4 accum )
+			void custom_effect_function( int3 pos, float distance, float travel, inout float4 accum )
 			{
 				
 				float a = 0.0;
