@@ -13,6 +13,8 @@
 		[Toggle(DO_CUSTOM_EFFECT)] DO_CUSTOM_EFFECT ("Do Custom Effect", int ) = 0
 		[Toggle(ENABLE_Z_WRITE)] ENABLE_Z_WRITE ("Enable Z Write", int ) = 0
 		[Toggle(DO_2D3D_TEXTURE)] DO_2D3D_TEXTURE ("Upconvert 2D to 3D Texture (like a CRT)", int ) = 0
+
+		[Toggle(ALTMODE)] ALTMODE ("Alternate Mode for this Specific Mode", int ) = 0
 	}
 	SubShader
 	{
@@ -39,6 +41,7 @@
 			#pragma multi_compile_local _ ENABLE_CUTTING_EDGE
 			#pragma multi_compile_local _ DO_CUSTOM_EFFECT DO_2D3D_TEXTURE
 			#pragma multi_compile_local _ ENABLE_Z_WRITE
+			#pragma multi_compile_local _ ALTMODE
 			#pragma target 5.0
 
 			#include "UnityCG.cginc"
@@ -59,7 +62,9 @@
 				UNITY_FOG_COORDS(1)
 				float4 vertex : SV_POSITION;
 				float3 worldPos : WORLDPOS;
-				float2 screenPosition : SCREENPOS; // Trivially refactorable to a float2
+				float2 screenPosition : SCREENPOS;
+				
+				// This is needed for SPS-I Support
 				UNITY_VERTEX_OUTPUT_STEREO
 			};
 
@@ -93,11 +98,12 @@
 					float initiala = accum.a;
 					float this_alpha = a*distance*accum.a*_GenAlpha;
 					
+#ifndef ALTMODE
 					// OPTIONAL: Enable or disable this to either smoothly interact with Z
 					// or to harshly interact with Z (this is very interesting).
 					// Having this code makes it nice and smooth.
 					this_alpha = min( travel/distance, 1.0 ) * this_alpha;
-					
+#endif
 					float3 color = tex2Dlod( _ColorRamp, float4( a, 0, 0, 0 ) );
 					accum.rgb += this_alpha * color;//lerp( accum.rgba, float4( normalize(AudioLinkHSVtoRGB(float3( a,1,1 ))), 0.0 ), this_alpha );
 					accum.a = initiala - this_alpha;
@@ -108,11 +114,19 @@
 				void convert2d3d_function( int3 pos, float distance, float travel, inout float4 accum )
 				{
 					float4 color = _Tex2D.Load( int4( pos.x, pos.y + pos.z * samplesize.x, 0, 0 ) );
+
+#ifdef ALTMODE
+					// For flat squares
 					float this_alpha = color.a;
+#else
+					// For more interesting squares
+					float this_alpha = distance*accum.a*color.a*_GenAlpha;
+#endif
 					// OPTIONAL: Enable or disable this to either smoothly interact with Z
 					// or to harshly interact with Z (this is very interesting).
 					// Having this code makes it nice and smooth.
 					this_alpha = min( travel/distance, 1.0 ) * this_alpha;
+					
 					float initiala = accum.a;
 					accum.rgb += this_alpha * color;
 					accum.a = initiala - this_alpha;
@@ -139,22 +153,26 @@
 
 			// Inspired by Internal_ScreenSpaceeShadow implementation.
 			// This code can be found on google if you search for "computeCameraSpacePosFromDepthAndInvProjMat"
-			float GetLinearZFromZDepth_WorksWithMirrors(float zDepthFromMap, float2 screenUV) {
+			// Note: The output of this will still need to be adjusted.  It is NOT in world space units.
+			float GetLinearZFromZDepth_WorksWithMirrors(float zDepthFromMap, float2 screenUV)
+			{
 				#if defined(UNITY_REVERSED_Z)
-					zDepthFromMap = 1 - zDepthFromMap;
-				#endif
+				zDepthFromMap = 1 - zDepthFromMap;
+				
+				// When using a mirror, the far plane is whack.  This just checks for it and aborts.
 				if( zDepthFromMap >= 1.0 ) return _ProjectionParams.z;
+				#endif
+
 				float4 clipPos = float4(screenUV.xy, zDepthFromMap, 1.0);
 				clipPos.xyz = 2.0f * clipPos.xyz - 1.0f;
-				float2 camPos = mul(unity_CameraInvProjection, clipPos).zw;
-				return -camPos.x / camPos.y;
+				float4 camPos = mul(unity_CameraInvProjection, clipPos);
+				return -camPos.z / camPos.w;
 			}
 
 
 			v2f vert (appdata v)
 			{
 				v2f o;
-				
 				UNITY_SETUP_INSTANCE_ID(v);
 				UNITY_INITIALIZE_OUTPUT(v2f, o);
 				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
@@ -177,7 +195,9 @@
 			// was SV_DepthLessEqual
 			fixed4 frag (v2f i, uint is_front : SV_IsFrontFace, out float outDepth : SV_Depth ) : SV_Target
 			{
+				// Need to do this first to support single-pass stereo instanced.
 				UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( i );
+				
 				float3 fullVectorFromEyeToGeometry = i.worldPos - _WorldSpaceCameraPos;
 				float3 worldSpaceDirection = normalize( fullVectorFromEyeToGeometry );
 
@@ -265,10 +285,12 @@
 						}
 					}
 				#endif
+				
+				float3 worldPosEyeHitInDepthTexture = _WorldSpaceCameraPos + eyeDepthWorld * worldSpaceDirection;
 
 				// We transform into object space for operations.
 				float3 objectSpaceCamera = mul(unity_WorldToObject, float4(worldPosModified,1.0));
-				float3 objectSpaceEyeDepthHit = mul(unity_WorldToObject, float4( _WorldSpaceCameraPos + eyeDepthWorld * worldSpaceDirection, 1.0 ) );
+				float3 objectSpaceEyeDepthHit = mul(unity_WorldToObject, float4( worldPosEyeHitInDepthTexture, 1.0 ) );
 				float3 objectSpaceDirection = mul(unity_WorldToObject, float4(worldSpaceDirection,0.0));
 				
 				// We want to transform into the local object space.

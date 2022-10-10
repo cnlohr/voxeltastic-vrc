@@ -42,6 +42,8 @@ float4 VT_TRACE( uint3 ARRAYSIZE, inout float3 RayPos, float3 RayDir, float4 Acc
 		TravelLength = min( backOfBoxTravelLength, TravelLength );
 	}
 	
+	if( TravelLength <= 0 ) return Accumulator;
+	
 	RayPos += RayDir * .0001;
 
 	fixed3 Normal;
@@ -69,7 +71,7 @@ float4 VT_TRACE( uint3 ARRAYSIZE, inout float3 RayPos, float3 RayDir, float4 Acc
 
 		int3 AO2 = ARRAYSIZE/2;
 		UNITY_LOOP
-		while( ++iteration < VT_MAXITER && Travel > 0 )
+		do
 		{
 #if 0
 			if( CellP.y >= ARRAYSIZE.y ) break;
@@ -93,7 +95,7 @@ float4 VT_TRACE( uint3 ARRAYSIZE, inout float3 RayPos, float3 RayDir, float4 Acc
 			//the next intersection is in ray space.  This is effectively
 			float3 Dists = NextSteps / DirAbs;
 
-			//XXX TODO: This should be optimized!
+			//XXX TODO: Can this be optimized?
 			LowestAxis = (Dists.x < Dists.y) ?
 				 ( ( Dists.x < Dists.z ) ? int3( 1, 0, 0 ) : int3( 0, 0, 1 ) ) :
 				 ( ( Dists.y < Dists.z ) ? int3( 0, 1, 0 ) : int3( 0, 0, 1 ) );
@@ -103,7 +105,6 @@ float4 VT_TRACE( uint3 ARRAYSIZE, inout float3 RayPos, float3 RayDir, float4 Acc
 			// are almost zero.
 			MinDist = max( min( min( Dists.x, Dists.y ), Dists.z ), .0001 );
 
-			//XXX XXX XXX
 			VT_FN( CellP, MinDist, Travel, Accumulator );
 			
 			//We now know which direction we wish to step.
@@ -112,7 +113,8 @@ float4 VT_TRACE( uint3 ARRAYSIZE, inout float3 RayPos, float3 RayDir, float4 Acc
 
 			float3 Motion = MinDist * RayDir;
 			PartialRayPos = frac( PartialRayPos + Motion );
-		} 
+		}
+		while( ++iteration < VT_MAXITER && Travel > 0 );
 	}
 	return Accumulator;
 }

@@ -16,6 +16,8 @@
 		CGINCLUDE
 		#include "/Assets/cnlohr/Shaders/tanoise/tanoise.cginc"
 		#define CRTTEXTURETYPE float4
+		
+		#include "/Assets/AudioLink/Shaders/AudioLink.cginc"
 		ENDCG
 
 		Pass
@@ -42,7 +44,8 @@
 			struct g2f
 			{
 				float4 vertex : SV_POSITION;
-				float4 color : TEXCOORD0;
+				nointerpolation  float4 color : TEXCOORD0;
+				float3 vpos : POSID;
 			};
 
 			// The vertex shader doesn't really perform much anything.
@@ -74,33 +77,78 @@
 				// We first output random noise, then we output a stable block.
 				float4 randval = chash44( float4( operationID, _Time.y, 0, 0 ) );
 
-				if( randval.w < .01 )
+				//XXX TODO: Improve this logic.
+				//float InvThreshold = AudioLinkData( ALPASS_AUDIOLINK + uint2( 0, 0 ) ) + AudioLinkData( ALPASS_AUDIOLINK + uint2( 0, 1 ) ) - .5;
+				
+				int band = 0;
+				for( band = 0; band<  4; band++ )
 				{
+					float avfs = AudioLinkData( ALPASS_FILTEREDAUDIOLINK + uint2( 0, band ) );
+					float avff = AudioLinkData( ALPASS_AUDIOLINK + uint2( 0, band ) );
+					float InvThreshold = avff - avfs;
+					
+					if( randval.w < InvThreshold  )
+					//if( 1 )
+					{
+						int power = ((randval.w * 60000) % 12)-5.5;
+						uint3 coordOut3D = randval.xyz * int3( FlexCRTSize.xx, FlexCRTSize.y / FlexCRTSize.x / 4 ) + int3(0,0,band*FlexCRTSize.y / FlexCRTSize.x / 4);
+						uint2 coordOut2D;
+						coordOut2D = uint2( coordOut3D.x, coordOut3D.y + coordOut3D.z * FlexCRTSize.x );
+						
+						o.vertex = FlexCRTCoordinateOut( coordOut2D );
+						o.color = float4( -randval.z*power*3000., 0, 0.0, 1.0 );
+						o.vpos = coordOut3D;
+						stream.Append(o);
+	/*
+						// My (failed) attempt to add symmetric events.
+						int dir = (randval.w * 6000) % 6;
+						if( dir == 0 ) coordOut3D.x += 3;
+						if( dir == 1 ) coordOut3D.x -= 3;
+						if( dir == 2 ) coordOut3D.y += 3;
+						if( dir == 3 ) coordOut3D.y -= 3;
+						if( dir == 4 ) coordOut3D.z += 3;
+						if( dir == 5 ) coordOut3D.z -= 3;
+						coordOut2D = uint2( coordOut3D.x, coordOut3D.y + coordOut3D.z * FlexCRTSize.x );
+						o.vertex = FlexCRTCoordinateOut( coordOut2D );
+						o.color = float4( randval.z*10000., 0, 0.0, 1.0 );
+						stream.Append(o);
+						*/
+					}
+				}
+/*
+				if( randval.w < InvThreshold2 )
+				{
+					int power = ((randval.w * 60000) % 12)-5.5;
 					uint3 coordOut3D = randval.xyz * int3( FlexCRTSize.xx, FlexCRTSize.y / FlexCRTSize.x );
 					uint2 coordOut2D;
 					coordOut2D = uint2( coordOut3D.x, coordOut3D.y + coordOut3D.z * FlexCRTSize.x );
 					
 					o.vertex = FlexCRTCoordinateOut( coordOut2D );
-					o.color = float4( -randval.z*10000., 0.0, 0.0, 1.0 );
-					stream.Append(o);
-
-					int dir = (randval.w * 6000) % 6;
-					if( dir == 0 ) coordOut3D.x += 3;
-					if( dir == 1 ) coordOut3D.x -= 3;
-					if( dir == 2 ) coordOut3D.y += 3;
-					if( dir == 3 ) coordOut3D.y -= 3;
-					if( dir == 4 ) coordOut3D.z += 3;
-					if( dir == 5 ) coordOut3D.z -= 3;
-					coordOut2D = uint2( coordOut3D.x, coordOut3D.y + coordOut3D.z * FlexCRTSize.x );
-					o.vertex = FlexCRTCoordinateOut( coordOut2D );
-					o.color = float4( randval.z*10000., 0.0, 0.0, 1.0 );
+					
+					o.color = float4( 0, 0, -randval.z*power*3000., 1.0 );
 					stream.Append(o);
 				}
+				*/
 			}
 
 			float4 frag( g2f IN ) : SV_Target
 			{
-				return IN.color;
+				float4 col = IN.color;
+
+
+				// XXX TODO
+
+				// Stable
+				float3 coloro = normalize( AudioLinkData( ALPASS_THEME_COLOR0 ) ) * 255;
+				
+				// Wild
+				//uint randseed = IN.vpos.x + IN.vpos.y * 16 + IN.vpos.z * 256;
+				//float3 coloro = normalize( AudioLinkData( ALPASS_CCLIGHTS + uint2( randseed % 128, 0 ) ) ) * 255;
+				
+				uint rcolor = ((uint)coloro.r) | (((uint)coloro.g)<<8) | (((uint)coloro.b)<<16);
+				//rcolor = 0x10f01f;
+				col.y = ( rcolor );
+				return col;
 			}
 			ENDCG
 		}
@@ -136,6 +184,14 @@
 
 				float4 tv = getVirtual3DVoxel( vox );
 				float4 vusum = 0;
+				float3 colorsum = 0;
+				float colortot = 0;
+				
+				uint colraw = uint( tv.y );
+				float3 thiscolor = float3( colraw & 0xff, (colraw>>8) & 0xff, (colraw>>16) & 0xff );
+
+				colorsum += thiscolor * abs( tv.x );
+				colortot += abs( tv.x );
 
 				if( 0 )
 				{
@@ -165,13 +221,18 @@
 						if( length( offset ) < 0.01 ) continue;
 						float inten = 1.0 / length( offset );
 						vutot += inten;
-						vusum += getVirtual3DVoxel( vox + offset );
+						float4 gv3 = getVirtual3DVoxel( vox + offset );
+						
+						colraw = ( gv3.y );
+						colorsum += float3( colraw & 0xff, (colraw>>8) & 0xff, (colraw>>16) & 0xff ) * abs( gv3.x );
+						colortot += abs( gv3.x );
+						vusum += gv3;
 					}
 					vusum /= vutot;
 				}
 				
-				float timestep = 0.1;
-				float decay = 0.92;
+				float timestep = 0.35;
+				float decay = 0.745;
 				
 				float velocity = tv.z;
 				float value = tv.x;
@@ -179,7 +240,11 @@
 				value+=velocity*timestep;
 				velocity+=laplacian*timestep;
 
-				return float4( value * decay, 0, velocity * decay, value );
+				float3 colorout = normalize( colorsum ) * 255;
+				
+				uint rcolor = ((uint)colorout.r) | (((uint)colorout.g)<<8) | (((uint)colorout.b)<<16);
+				
+				return float4( value * decay, ( rcolor ), velocity * decay, value );
 			}
 			
 			ENDCG
@@ -203,9 +268,13 @@
 
 			float4 frag( v2f_customrendertexture IN ) : SV_Target
 			{
+
 				float4 value = _Tex2D.Load( int3(IN.globalTexcoord * FlexCRTSize.xy, 0 ) );
-				float3 color = tex2Dlod( _ColorRamp, float4( pow( abs( value.x ), 0.1 ) * sign( value.x ), 0, 0, 0 ) );
-				return saturate( float4( color, saturate( abs( value.x ) )/10.0 ) );
+				//float3 color = tex2Dlod( _ColorRamp, float4( pow( abs( value.x ), 0.1 ) * sign( value.x )+.6, 0, 0, 0 ) );
+
+				uint colraw = ( value.y );
+				float3 color = float3( (colraw) & 0xff, (colraw>>8) & 0xff, (colraw>>16) & 0xff );
+				return saturate( float4( 2.5 * color / 255., saturate( abs( value.x ) )/10.0 ) );
 			}
 			
 			ENDCG
@@ -234,11 +303,56 @@
 				vox.z = vox.y / FlexCRTSize.x;
 				vox.y %= FlexCRTSize.x;
 				
-				float4 noise4 = tanoise4( float4( vox*.2 + float3( 0, _Time.y*.05, _Time.y*.25 ), _Time.y * .1 ) );
-				float4 noiseB = tanoise4( float4( vox*.2 + float3( 0, _Time.y*.05, -_Time.y*.25 ), _Time.y * 1.1 ) );
+				float chronotime1 = (AudioLinkDecodeDataAsUInt( ALPASS_CHRONOTENSITY  + uint2( 1, 1 ) )%100000000)/200000.0;
+				float chronotime2 = (AudioLinkDecodeDataAsUInt( ALPASS_CHRONOTENSITY  + uint2( 4, 0 ) )%100000000)/200000.0;
+				
+				chronotime1 = _Time.y * .2;				
+				chronotime2 += _Time.y*.2;
 
+				float4 noise4 = tanoise4( float4( vox*.2 + float3( 0, chronotime1*.05,  chronotime1 ), chronotime1 ) );
+				float4 noiseB = tanoise4( float4( vox*.2 + float3( 0, chronotime2*.00, -chronotime2*.05 ), chronotime2 ) );
 
-				float4 color = saturate( float4( 0, 0, 0, -.4 ) + float4( noiseB.rgb, noise4.a ) * float4( 1, 1, 1, 0.6 ) );
+				float alphasel = (
+					noise4.x * (AudioLinkData( ALPASS_FILTEREDAUDIOLINK + uint2( 1, 0 ) ) + 3 ) +
+					noise4.y * (AudioLinkData( ALPASS_FILTEREDAUDIOLINK + uint2( 1, 1 ) ) + 3 ) +
+					noise4.z * (AudioLinkData( ALPASS_FILTEREDAUDIOLINK + uint2( 1, 2 ) ) + 3 ) +
+					noise4.w * (AudioLinkData( ALPASS_FILTEREDAUDIOLINK + uint2( 1, 3 ) ) + 3 )) / 10.0 - .8;
+					
+				
+				float4 color;
+				color.a = saturate( alphasel );
+				int ColorChordOut = 0;
+				if( ColorChordOut == 1 )
+				{
+					// Use alphasel to select between AudioLink values.
+					float3 color0 = AudioLinkData( ALPASS_THEME_COLOR0 );
+					float3 color1 = AudioLinkData( ALPASS_THEME_COLOR1 );
+					float3 color2 = AudioLinkData( ALPASS_THEME_COLOR2 );
+					float3 color3 = AudioLinkData( ALPASS_THEME_COLOR3 );
+					if( length( color0 ) < 0.01 ) noiseB.r = 0;
+					if( length( color1 ) < 0.01 ) noiseB.g = 0;
+					if( length( color2 ) < 0.01 ) noiseB.b = 0;
+					if( length( color3 ) < 0.01 ) noiseB.a = 0;
+					
+					float maxelem = max( max( noiseB.r, noiseB.g ), max( noiseB.b, noiseB.a ) );
+					//Find max element.
+					
+					if( maxelem == noiseB.r ) color.rgb = color0;
+					if( maxelem == noiseB.g ) color.rgb = color1;
+					if( maxelem == noiseB.b ) color.rgb = color2;
+					if( maxelem == noiseB.a ) color.rgb = color3;
+					if( length( color.rgb ) < 0.01 ) color.rgb = 0.1;
+				}
+				else if( ColorChordOut == 2 )
+				{
+					color.rgb = AudioLinkLerp( ALPASS_CCSTRIP + float2( noiseB.r * AUDIOLINK_WIDTH, 0 ) );
+				}
+				else
+				{
+					color.rgb = noiseB.rgb;
+				}
+				
+				
 				
 				// Force vividness to be high.
 				float minc = min( min( color.r, color.g ), color.b );

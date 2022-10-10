@@ -7,9 +7,9 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: VoxeltasticCustomFromCRT
-  m_Shader: {fileID: 4800000, guid: 0f53b9e3f59bf684ebfc8515547550db, type: 3}
-  m_ShaderKeywords: DO_2D3D_TEXTURE ENABLE_CUTTING_EDGE
+  m_Name: RandomPlatform
+  m_Shader: {fileID: 4800000, guid: 333dcc84429cba0498209ff725f5ccaf, type: 3}
+  m_ShaderKeywords: 
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -24,7 +24,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ColorRamp:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 8600000, guid: bc6dd89eafde020428ea4d4675fc715d, type: 2}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _DetailAlbedoMap:
@@ -59,30 +59,23 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
-    - _Tex:
+    - _Ramp:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
-    - _Tex2D:
-        m_Texture: {fileID: 8600000, guid: 02ea96eb49effa848881e148aa363aa8, type: 2}
+    - _TANoiseTex:
+        m_Texture: {fileID: 2800000, guid: 5b1a85025e92ddf47befef57c8813b94, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Floats:
-    - DO_2D3D_TEXTURE: 1
-    - DO_CUSTOM_EFFECT: 0
-    - ENABLE_CUTTING_EDGE: 1
-    - ENABLE_Z_WRITE: 0
     - _BumpScale: 1
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
-    - _GenAlpha: 2
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
-    - _MaxVal: 1
     - _Metallic: 0
-    - _MinVal: 0.24
     - _Mode: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.02
