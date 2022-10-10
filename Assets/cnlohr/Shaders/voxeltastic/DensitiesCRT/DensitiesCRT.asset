@@ -55,7 +55,7 @@ CustomRenderTexture:
     rotation: 0
     passIndex: 1
     needSwap: 1
-  m_UpdatePeriod: 0.01
+  m_UpdatePeriod: 0
   m_ShaderPass: 1
   m_CubemapFaceMask: 4294967295
   m_DoubleBuffered: 1
