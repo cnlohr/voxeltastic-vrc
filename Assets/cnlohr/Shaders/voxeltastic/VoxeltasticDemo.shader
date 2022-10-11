@@ -329,6 +329,7 @@
 				#endif
 
 				col.a = 1.0 - col.a;
+				col.a = saturate( col.a );
 				UNITY_APPLY_FOG(i.fogCoord, col);
 				return col;
 			}
