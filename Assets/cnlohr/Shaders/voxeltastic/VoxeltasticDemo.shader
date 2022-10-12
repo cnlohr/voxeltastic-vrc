@@ -8,6 +8,7 @@
 		_MinVal ("Min Val", float ) = 0.6
 		_MaxVal ("Min Val", float ) = 1.0
 		_GenAlpha ("Gen Alpha", float ) = 1.0
+		_Brightness ("Brightness", float ) = 1.0
 		
 		[Toggle(ENABLE_CUTTING_EDGE)] ENABLE_CUTTING_EDGE ("Enable Cutting Edge", int ) = 1
 		[Toggle(DO_CUSTOM_EFFECT)] DO_CUSTOM_EFFECT ("Do Custom Effect", int ) = 0
@@ -71,6 +72,7 @@
 			sampler2D _ColorRamp;
 			float _MinVal;
 			float _MaxVal;
+			float _Brightness;
 			float _GenAlpha;
 
 			UNITY_DECLARE_DEPTH_TEXTURE( _CameraDepthTexture );
@@ -330,6 +332,7 @@
 
 				col.a = 1.0 - col.a;
 				col.a = saturate( col.a );
+				col.rgb *= _Brightness;
 				UNITY_APPLY_FOG(i.fogCoord, col);
 				return col;
 			}

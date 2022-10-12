@@ -73,6 +73,7 @@ Material:
     - DO_CUSTOM_EFFECT: 0
     - ENABLE_CUTTING_EDGE: 1
     - ENABLE_Z_WRITE: 0
+    - _Brightness: 2
     - _BumpScale: 1
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
