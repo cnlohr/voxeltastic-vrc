@@ -69,6 +69,8 @@
 				
 				int batchID = input[0].batchID;
 
+				float instanceTime = AudioLinkDecodeDataAsSeconds( ALPASS_GENERALVU_NETWORK_TIME );
+
 				int operationID = geoPrimID * 1 + ( instanceID - batchID );
 				
 				g2f o;
@@ -83,30 +85,35 @@
 				int band = 0;
 				for( band = 0; band<  4; band++ )
 				{
-					float4 randval = chash44( float4( operationID, _Time.y*10., band, 0 ) );
+					float4 randval = chash44( float4( operationID, instanceTime*10., band, 0 ) );
 					
-					float avff = AudioLinkData( ALPASS_AUDIOLINK + uint2( 0, band ) );
+					float avff_in = AudioLinkData( ALPASS_AUDIOLINK + uint2( 0, band ) );
 					float avff_filter = AudioLinkData( ALPASS_FILTEREDAUDIOLINK + uint2( 0, band ) );
+					float avff = avff_in - avff_filter / 1.5;
+					
+					avff /= 2; // Make it less frequent.
 
-					avff -= avff_filter / 1.5;
-					
-					avff /= 6; // Make it less frequent.
-					
-					
 					if( randval.w < avff  )
 					{
-						uint3 coordOut3D = randval.xyz * int3( FlexCRTSize.xx, FlexCRTSize.y / FlexCRTSize.x / 4 ) + int3(0,0,band*FlexCRTSize.y / FlexCRTSize.x / 4);
+						// Could be randval.
+						float4 rapos = tanoise3( float3( instanceTime*.3, 0.0, band*10 ) );
+						
+						rapos.x *= 0.5;
+						rapos.x += band * .125;
+
+						uint3 coordOut3D = rapos.xyz * int3( FlexCRTSize.xx, FlexCRTSize.y / FlexCRTSize.x / 4 ) + int3(0,0,band*FlexCRTSize.y / FlexCRTSize.x / 4);
 						uint2 coordOut2D;
 						coordOut2D = uint2( coordOut3D.x, coordOut3D.y + coordOut3D.z * FlexCRTSize.x );
 						
 						float power = 
 							// ((randval.w * 60000) % 12)-5.5; randomized
-							((int(randval.w * 600) % 2)-0.5) * 5;
+							//((int(randval.w * 600) % 2)-0.5) * 5; // Binary
+							avff_in  * ((int(randval.w * 600) % 2)-0.5) * 8; // Fliping but dependent.
 						
 
 						o.randval = randval;
 						o.vertex = FlexCRTCoordinateOut( coordOut2D );
-						o.color = float4( power*5000, 0, 0.0, 1.0 );
+						o.color = float4( power*1300, 0, 0.0, 1.0 );
 						o.vpos = coordOut3D;
 						stream.Append(o);
 					}
