@@ -196,7 +196,8 @@
 				float randomizepowerset[8] = { hashatpos1.rgba, hashatpos2.rgba };
 				
 				// The hatpos diff is what controls how things randomly expand
-				strongest_color_strength += hashatpos1.x*11. * strongest_color_strength; ///dot( hashatpos1, 1.0 ) / 4.0;
+				// Comment this out if you want to sparkle together.  hashatpos1.x*11.0 is pretty harsh. hashatpos1.x*5 is REALY cool, people like it.
+				strongest_color_strength += hashatpos1.x*5. * strongest_color_strength; ///dot( hashatpos1, 1.0 ) / 4.0;
 
 				if( 0 )
 				{
