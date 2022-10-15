@@ -259,7 +259,7 @@
 				#else
 				// For 96x96
 				float timestep = 0.44;
-				float decay = 0.726;
+				float decay = 0.727;
 				#endif
 				
 				float velocity = tv.z;
